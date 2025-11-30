@@ -1,21 +1,34 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Play, Pause, RotateCcw, SkipForward, Coffee, Brain, Armchair } from 'lucide-react';
 import { TimerMode, Task } from '../types';
-import { cn, formatTime, playNotificationSound } from '../utils';
+import { cn, formatTime, playAlarmSound, playTickSound, stopTickSound } from '../utils';
 
 interface TimerDisplayProps {
   activeTask: Task | undefined;
   onTimerComplete: (mode: TimerMode) => void;
   onModeChange: (mode: TimerMode) => void;
+  startBreakTrigger?: number; // When this changes, start short break mode
+  startFocusTrigger?: number; // When this changes, start focus mode
 }
 
-const MODES: Record<TimerMode, { label: string; time: number; color: string; icon: React.ElementType }> = {
-  focus: { label: 'Focus', time: 25 * 60, color: 'text-pomo-red', icon: Brain },
-  shortBreak: { label: 'Short Break', time: 5 * 60, color: 'text-pomo-green', icon: Coffee },
-  longBreak: { label: 'Long Break', time: 15 * 60, color: 'text-pomo-blue', icon: Armchair },
+// Check if debug mode is enabled via URL parameter (?debug=true)
+const getDebugMode = (): boolean => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('debug') === 'true';
+  }
+  return false;
 };
 
-const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete, onModeChange }) => {
+const DEBUG_MODE = getDebugMode();
+
+const MODES: Record<TimerMode, { label: string; time: number; color: string; icon: React.ElementType }> = {
+  focus: { label: 'Focus', time: DEBUG_MODE ? 5 : 25 * 60, color: 'text-pomo-red', icon: Brain },
+  shortBreak: { label: 'Short Break', time: DEBUG_MODE ? 5 : 5 * 60, color: 'text-pomo-green', icon: Coffee },
+  longBreak: { label: 'Long Break', time: DEBUG_MODE ? 5 : 15 * 60, color: 'text-pomo-blue', icon: Armchair },
+};
+
+const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete, onModeChange, startBreakTrigger, startFocusTrigger }) => {
   const [mode, setMode] = useState<TimerMode>('focus');
   const [timeLeft, setTimeLeft] = useState(MODES.focus.time);
   const [isActive, setIsActive] = useState(false);
@@ -27,23 +40,52 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (progress / 100) * circumference;
 
-  const handleModeSwitch = (newMode: TimerMode) => {
+  const handleModeSwitch = (newMode: TimerMode, autoStart: boolean = false) => {
     setMode(newMode);
     setTimeLeft(MODES[newMode].time);
-    setIsActive(false);
+    setIsActive(autoStart);
     onModeChange(newMode);
   };
 
-  const toggleTimer = () => setIsActive(!isActive);
+  // Handle external trigger to start break
+  useEffect(() => {
+    if (startBreakTrigger && startBreakTrigger > 0) {
+      setMode('shortBreak');
+      setTimeLeft(MODES.shortBreak.time);
+      setIsActive(true);
+      onModeChange('shortBreak');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startBreakTrigger]);
+
+  // Handle external trigger to start focus
+  useEffect(() => {
+    if (startFocusTrigger && startFocusTrigger > 0) {
+      setMode('focus');
+      setTimeLeft(MODES.focus.time);
+      setIsActive(true);
+      onModeChange('focus');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startFocusTrigger]);
+
+  const toggleTimer = () => {
+    setIsActive(!isActive);
+    // Stop tick sound when pausing
+    if (isActive) {
+      stopTickSound();
+    }
+  };
   
   const resetTimer = () => {
     setIsActive(false);
+    stopTickSound(); // Stop tick sound when resetting
     setTimeLeft(MODES[mode].time);
   };
 
   const handleComplete = useCallback(() => {
     setIsActive(false);
-    playNotificationSound();
+    playAlarmSound(); // Play alarm sound when timer completes
     onTimerComplete(mode);
     // Auto reset for next round, but don't start
     setTimeLeft(0); 
@@ -54,14 +96,36 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
 
     if (isActive && timeLeft > 0) {
       interval = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
+        setTimeLeft((prev) => {
+          const newTime = prev - 1;
+          // Play tick sound on each second only in focus mode
+          if (mode === 'focus' && newTime > 0) {
+            playTickSound();
+          } else if (mode !== 'focus' && newTime === 0) {
+            // Stop tick sound when timer reaches 0 in break mode
+            stopTickSound();
+          }
+          return newTime;
+        });
       }, 1000);
+      // Play initial tick when timer starts, only in focus mode
+      if (mode === 'focus') {
+        playTickSound();
+      }
     } else if (timeLeft === 0 && isActive) {
+      stopTickSound(); // Ensure tick sound is stopped before alarm
       handleComplete();
+    } else if (!isActive) {
+      // Stop tick sound when timer is paused
+      stopTickSound();
     }
 
-    return () => clearInterval(interval);
-  }, [isActive, timeLeft, handleComplete]);
+    return () => {
+      clearInterval(interval);
+      // Stop tick sound when component unmounts or effect cleans up
+      stopTickSound();
+    };
+  }, [isActive, timeLeft, handleComplete, mode]);
 
   // Dynamic theme color based on mode
   const themeColor = mode === 'focus' ? 'bg-pomo-red' : mode === 'shortBreak' ? 'bg-pomo-green' : 'bg-pomo-blue';

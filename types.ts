@@ -13,6 +13,7 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   createdAt: number;
+  deletedAt?: number; // Timestamp when task was deleted, undefined if not deleted
 }
 
 export interface DailyStats {
