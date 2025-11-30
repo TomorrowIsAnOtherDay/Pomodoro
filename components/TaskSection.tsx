@@ -162,9 +162,9 @@ const TaskSection: React.FC<TaskSectionProps> = ({
       {/* Task List */}
       <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
         {filteredTasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 text-gray-400">
-             <div className="mb-2">📝</div>
-             <p className="text-sm">No tasks found.</p>
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 py-12">
+             <div className="text-7xl mb-4 opacity-60">📝</div>
+             <p className="text-base text-gray-500 font-medium">Stay clear, add a task to start</p>
           </div>
         ) : (
           filteredTasks.map((task) => (

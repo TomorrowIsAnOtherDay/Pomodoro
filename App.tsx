@@ -7,50 +7,96 @@ import TodoList from './pages/TodoList';
 
 function App() {
   // --- State ---
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [dailyStats, setDailyStats] = useState<DailyStats>({
-    date: getTodayString(),
-    totalPomodoros: 0,
-    completedTasks: 0,
-    totalFocusMinutes: 0
+  // Initialize state from localStorage immediately to avoid flash of empty state
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    try {
+      const savedTasks = localStorage.getItem('pomodoro_tasks');
+      if (savedTasks) {
+        return JSON.parse(savedTasks);
+      }
+    } catch (e) {
+      console.error('Failed to load tasks from localStorage:', e);
+    }
+    return [];
   });
+
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(() => {
+    try {
+      const savedActiveTaskId = localStorage.getItem('pomodoro_activeTaskId');
+      if (savedActiveTaskId && savedActiveTaskId !== '') {
+        return savedActiveTaskId;
+      }
+    } catch (e) {
+      console.error('Failed to load activeTaskId from localStorage:', e);
+    }
+    return null;
+  });
+
+  const [dailyStats, setDailyStats] = useState<DailyStats>(() => {
+    try {
+      const savedStats = localStorage.getItem('pomodoro_stats');
+      if (savedStats) {
+        const parsedStats = JSON.parse(savedStats);
+        // Check if stats are for today
+        if (parsedStats.date === getTodayString()) {
+          return parsedStats;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load stats from localStorage:', e);
+    }
+    return {
+      date: getTodayString(),
+      totalPomodoros: 0,
+      completedTasks: 0,
+      totalFocusMinutes: 0
+    };
+  });
+
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // --- Persistence ---
   
-  // Load initial data
+  // Mark as initialized after first render
   useEffect(() => {
-    const savedTasks = localStorage.getItem('pomodoro_tasks');
-    if (savedTasks) {
-      setTasks(JSON.parse(savedTasks));
-    }
-
-    const savedStats = localStorage.getItem('pomodoro_stats');
-    if (savedStats) {
-      const parsedStats = JSON.parse(savedStats);
-      // Check if stats are for today
-      if (parsedStats.date === getTodayString()) {
-        setDailyStats(parsedStats);
-      } else {
-        // Reset stats for new day but keep history (todo: implement full history)
-        setDailyStats({
-          date: getTodayString(),
-          totalPomodoros: 0,
-          completedTasks: 0,
-          totalFocusMinutes: 0
-        });
-      }
-    }
+    setIsInitialized(true);
   }, []);
 
-  // Save on change
+  // Save on change (only after initialization to avoid overwriting loaded data)
   useEffect(() => {
-    localStorage.setItem('pomodoro_tasks', JSON.stringify(tasks));
-  }, [tasks]);
+    if (!isInitialized) return;
+    
+    try {
+      localStorage.setItem('pomodoro_tasks', JSON.stringify(tasks));
+      console.log('Saved tasks to localStorage:', tasks.length, 'tasks');
+    } catch (e) {
+      console.error('Failed to save tasks to localStorage:', e);
+    }
+  }, [tasks, isInitialized]);
 
   useEffect(() => {
-    localStorage.setItem('pomodoro_stats', JSON.stringify(dailyStats));
-  }, [dailyStats]);
+    if (!isInitialized) return;
+    
+    try {
+      if (activeTaskId) {
+        localStorage.setItem('pomodoro_activeTaskId', activeTaskId);
+      } else {
+        localStorage.removeItem('pomodoro_activeTaskId');
+      }
+    } catch (e) {
+      console.error('Failed to save activeTaskId to localStorage:', e);
+    }
+  }, [activeTaskId, isInitialized]);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    
+    try {
+      localStorage.setItem('pomodoro_stats', JSON.stringify(dailyStats));
+    } catch (e) {
+      console.error('Failed to save stats to localStorage:', e);
+    }
+  }, [dailyStats, isInitialized]);
 
   // Recalculate completed tasks count based on current tasks list status (exclude deleted tasks)
   useEffect(() => {

@@ -28,10 +28,7 @@ const TodoList: React.FC<TodoListProps> = ({ tasks, onUpdateTasks }) => {
   // Edit Task State
   const [editTask, setEditTask] = useState<Partial<Task>>({});
 
-  useEffect(() => {
-    // Save tasks to localStorage whenever they change
-    localStorage.setItem('pomodoro_tasks', JSON.stringify(tasks));
-  }, [tasks]);
+  // Tasks are saved in App.tsx, no need to save here to avoid duplicate saves
 
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault();

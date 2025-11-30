@@ -5,32 +5,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const playNotificationSound = () => {
-  try {
-    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContext) return;
-    
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
-    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.5);
-    
-    gain.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-
-    osc.start();
-    osc.stop(ctx.currentTime + 0.5);
-  } catch (e) {
-    console.error("Audio play failed", e);
-  }
-};
-
 // Audio file path for tick sound (can be customized)
 // Place your audio file in public/sounds/ directory
 // Supported formats: .mp3, .wav, .ogg, .m4a
@@ -64,6 +38,9 @@ const initTickAudio = (): HTMLAudioElement | null => {
 
 // Create a ticking sound for the timer
 export const playTickSound = () => {
+  const settings = getAudioSettings();
+  if (!settings.tickSoundEnabled) return;
+  
   try {
     // Try to use local audio file first
     const audio = initTickAudio();
@@ -262,8 +239,57 @@ export const getTodayString = (): string => {
   return new Date().toISOString().split('T')[0];
 };
 
+// Audio settings management
+export interface AudioSettings {
+  tickSoundEnabled: boolean;
+  alarmSoundEnabled: boolean;
+  notificationSoundEnabled: boolean;
+}
+
+const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
+  tickSoundEnabled: true,
+  alarmSoundEnabled: true,
+  notificationSoundEnabled: true,
+};
+
+const SETTINGS_KEY = 'pomodoro_audio_settings';
+
+export const getAudioSettings = (): AudioSettings => {
+  try {
+    const saved = localStorage.getItem(SETTINGS_KEY);
+    if (saved) {
+      return { ...DEFAULT_AUDIO_SETTINGS, ...JSON.parse(saved) };
+    }
+  } catch (e) {
+    console.warn('Failed to load audio settings:', e);
+  }
+  return DEFAULT_AUDIO_SETTINGS;
+};
+
+export const saveAudioSettings = (settings: AudioSettings): void => {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) {
+    console.warn('Failed to save audio settings:', e);
+  }
+};
+
+export const updateAudioSetting = <K extends keyof AudioSettings>(
+  key: K,
+  value: AudioSettings[K]
+): void => {
+  const settings = getAudioSettings();
+  settings[key] = value;
+  saveAudioSettings(settings);
+};
+
 // Request notification permission and send desktop notification
 export const sendDesktopNotification = (title: string, options?: NotificationOptions) => {
+  const settings = getAudioSettings();
+  if (!settings.notificationSoundEnabled) {
+    // Still send notification even if sound is disabled
+  }
+  
   // Check if browser supports notifications
   if (!('Notification' in window)) {
     console.log('This browser does not support desktop notifications');
@@ -283,5 +309,35 @@ export const sendDesktopNotification = (title: string, options?: NotificationOpt
         new Notification(title, options);
       }
     });
+  }
+};
+
+// Play notification sound (used in RestEndPrompt)
+export const playNotificationSound = () => {
+  const settings = getAudioSettings();
+  if (!settings.notificationSoundEnabled) return;
+  
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.5);
+    
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (e) {
+    console.error("Audio play failed", e);
   }
 };

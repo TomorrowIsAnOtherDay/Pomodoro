@@ -73,8 +73,8 @@ const Home: React.FC<HomeProps> = ({
         totalFocusMinutes: dailyStats.totalFocusMinutes + 25
       });
 
-      // 3. Show break prompt
-      setShowBreakPrompt(true);
+      // 3. Break prompt is now handled directly in TimerDisplay component
+      setShowBreakPrompt(false);
       setShowRestEndPrompt(false);
     } else {
       // Rest ended - show rest end prompt
@@ -145,6 +145,7 @@ const Home: React.FC<HomeProps> = ({
               onModeChange={() => {}} // Could be used to log interruptions
               startBreakTrigger={startBreakTrigger}
               startFocusTrigger={startFocusTrigger}
+              onStartBreak={handleStartBreak}
             />
             
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">

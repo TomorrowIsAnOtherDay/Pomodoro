@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Play, Pause, RotateCcw, SkipForward, Coffee, Brain, Armchair } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Play, Pause, RotateCcw, SkipForward, Coffee, Brain, Armchair, Volume2, VolumeX, Sparkles } from 'lucide-react';
 import { TimerMode, Task } from '../types';
-import { cn, formatTime, playAlarmSound, playTickSound, stopTickSound } from '../utils';
+import { cn, formatTime, playAlarmSound, playTickSound, stopTickSound, getAudioSettings, updateAudioSetting, AudioSettings } from '../utils';
 
 interface TimerDisplayProps {
   activeTask: Task | undefined;
@@ -9,6 +9,7 @@ interface TimerDisplayProps {
   onModeChange: (mode: TimerMode) => void;
   startBreakTrigger?: number; // When this changes, start short break mode
   startFocusTrigger?: number; // When this changes, start focus mode
+  onStartBreak?: () => void; // Callback to trigger break start
 }
 
 // Check if debug mode is enabled via URL parameter (?debug=true)
@@ -28,10 +29,13 @@ const MODES: Record<TimerMode, { label: string; time: number; color: string; ico
   longBreak: { label: 'Long Break', time: DEBUG_MODE ? 5 : 15 * 60, color: 'text-pomo-blue', icon: Armchair },
 };
 
-const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete, onModeChange, startBreakTrigger, startFocusTrigger }) => {
+const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete, onModeChange, startBreakTrigger, startFocusTrigger, onStartBreak }) => {
   const [mode, setMode] = useState<TimerMode>('focus');
   const [timeLeft, setTimeLeft] = useState(MODES.focus.time);
   const [isActive, setIsActive] = useState(false);
+  const [audioSettings, setAudioSettings] = useState<AudioSettings>(getAudioSettings());
+  const [hasCompleted, setHasCompleted] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
   
   // Progress calculation for the circle
   const totalTime = MODES[mode].time;
@@ -44,6 +48,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
     setMode(newMode);
     setTimeLeft(MODES[newMode].time);
     setIsActive(autoStart);
+    setHasCompleted(false); // Reset completion flag when switching modes
     onModeChange(newMode);
   };
 
@@ -53,6 +58,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
       setMode('shortBreak');
       setTimeLeft(MODES.shortBreak.time);
       setIsActive(true);
+      setHasCompleted(false); // Reset completion flag when starting break
       onModeChange('shortBreak');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,6 +70,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
       setMode('focus');
       setTimeLeft(MODES.focus.time);
       setIsActive(true);
+      setHasCompleted(false); // Reset completion flag when starting focus
       onModeChange('focus');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -81,15 +88,34 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
     setIsActive(false);
     stopTickSound(); // Stop tick sound when resetting
     setTimeLeft(MODES[mode].time);
+    setHasCompleted(false); // Reset completion flag when resetting
   };
 
   const handleComplete = useCallback(() => {
-    setIsActive(false);
-    playAlarmSound(); // Play alarm sound when timer completes
-    onTimerComplete(mode);
-    // Auto reset for next round, but don't start
-    setTimeLeft(0); 
-  }, [mode, onTimerComplete]);
+    // Only complete if timer actually reached 0 while active and hasn't been completed yet
+    if (timeLeft === 0 && isActive && !hasCompleted) {
+      setHasCompleted(true);
+      setIsActive(false);
+      playAlarmSound(); // Play alarm sound when timer completes
+      onTimerComplete(mode);
+      // Auto reset for next round, but don't start
+      setTimeLeft(0); 
+    }
+  }, [mode, onTimerComplete, timeLeft, isActive, hasCompleted]);
+
+  const handleTakeBreak = () => {
+    // Show celebration animation
+    setShowCelebration(true);
+    
+    // Hide celebration after animation
+    setTimeout(() => {
+      setShowCelebration(false);
+      // Trigger break start
+      if (onStartBreak) {
+        onStartBreak();
+      }
+    }, 1500); // Celebration animation duration
+  };
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -112,7 +138,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
       if (mode === 'focus') {
         playTickSound();
       }
-    } else if (timeLeft === 0 && isActive) {
+    } else if (timeLeft === 0 && isActive && !hasCompleted) {
       stopTickSound(); // Ensure tick sound is stopped before alarm
       handleComplete();
     } else if (!isActive) {
@@ -127,6 +153,17 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
     };
   }, [isActive, timeLeft, handleComplete, mode]);
 
+  // Load settings on mount
+  useEffect(() => {
+    setAudioSettings(getAudioSettings());
+  }, []);
+
+  const handleToggleTickSound = () => {
+    const newValue = !audioSettings.tickSoundEnabled;
+    updateAudioSetting('tickSoundEnabled', newValue);
+    setAudioSettings({ ...audioSettings, tickSoundEnabled: newValue });
+  };
+
   // Dynamic theme color based on mode
   const themeColor = mode === 'focus' ? 'bg-pomo-red' : mode === 'shortBreak' ? 'bg-pomo-green' : 'bg-pomo-blue';
   const themeTextColor = MODES[mode].color;
@@ -134,6 +171,26 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
 
   return (
     <div className="bg-white rounded-2xl shadow-lg p-6 flex flex-col items-center justify-center relative overflow-hidden transition-colors duration-500">
+      {/* Tick Sound Toggle - Bottom Left */}
+      <div className="absolute bottom-4 left-4 z-20">
+        <button
+          onClick={handleToggleTickSound}
+          className={cn(
+            "p-2 rounded-lg transition-all",
+            audioSettings.tickSoundEnabled 
+              ? "text-gray-600 hover:text-gray-800 hover:bg-gray-100" 
+              : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+          )}
+          title={audioSettings.tickSoundEnabled ? "Disable tick sound" : "Enable tick sound"}
+        >
+          {audioSettings.tickSoundEnabled ? (
+            <Volume2 size={20} />
+          ) : (
+            <VolumeX size={20} />
+          )}
+        </button>
+      </div>
+
       {/* Mode Tabs */}
       <div className="flex space-x-2 mb-8 z-10 bg-gray-100 p-1 rounded-full">
         {(Object.keys(MODES) as TimerMode[]).map((m) => (
@@ -204,17 +261,59 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
         )}
       </div>
 
+      {/* Celebration Animation */}
+      {showCelebration && (
+        <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none overflow-hidden">
+          <div className="text-7xl animate-bounce">
+            🎉
+          </div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            {[...Array(30)].map((_, i) => {
+              const angle = (i / 30) * Math.PI * 2;
+              const distance = 100 + Math.random() * 50;
+              const x = 50 + Math.cos(angle) * (distance / 10);
+              const y = 50 + Math.sin(angle) * (distance / 10);
+              return (
+                <div
+                  key={i}
+                  className="absolute text-2xl animate-ping"
+                  style={{
+                    left: `${x}%`,
+                    top: `${y}%`,
+                    animationDelay: `${Math.random() * 0.3}s`,
+                    animationDuration: `${0.8 + Math.random() * 0.4}s`,
+                  }}
+                >
+                  ✨
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Controls */}
       <div className="flex items-center gap-4 z-10">
-        <button
-          onClick={toggleTimer}
-          className={cn(
-            "w-20 h-20 rounded-2xl flex items-center justify-center text-white shadow-lg transform transition-all hover:scale-105 active:scale-95",
-            themeColor
-          )}
-        >
-          {isActive ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}
-        </button>
+        {/* Show "Take a Break" button when focus mode completes */}
+        {mode === 'focus' && timeLeft === 0 && hasCompleted ? (
+          <button
+            onClick={handleTakeBreak}
+            className="w-20 h-20 rounded-2xl flex flex-col items-center justify-center bg-pomo-green text-white shadow-lg transform transition-all hover:scale-105 active:scale-95"
+          >
+            <Coffee size={32} />
+            <span className="text-xs font-medium mt-1">Take a Break</span>
+          </button>
+        ) : (
+          <button
+            onClick={toggleTimer}
+            className={cn(
+              "w-20 h-20 rounded-2xl flex items-center justify-center text-white shadow-lg transform transition-all hover:scale-105 active:scale-95",
+              themeColor
+            )}
+          >
+            {isActive ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}
+          </button>
+        )}
         
         <button
           onClick={resetTimer}
@@ -224,7 +323,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
           <RotateCcw size={24} />
         </button>
 
-        {isActive && (
+        {isActive && timeLeft > 0 && (
            <button
            onClick={handleComplete}
            className="w-14 h-14 rounded-xl bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition-colors"
