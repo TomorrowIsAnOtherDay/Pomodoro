@@ -1,0 +1,5 @@
+{
+  "name": "Pomodoro Todo Focus",
+  "description": "A streamlined productivity tool combining the Pomodoro technique with a lightweight task manager. Track focus time, manage daily todos, and analyze your productivity locally.",
+  "requestFramePermissions": []
+}
