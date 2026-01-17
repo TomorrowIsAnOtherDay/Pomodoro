@@ -1,107 +1,138 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Play, Pause, RotateCcw, SkipForward, Coffee, Brain, Armchair, Volume2, VolumeX, Sparkles } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Play, Pause, RotateCcw, SkipForward, Coffee, Brain, Armchair, Volume2, VolumeX } from 'lucide-react';
 import { TimerMode, Task } from '../types';
-import { cn, formatTime, playAlarmSound, playTickSound, stopTickSound, getAudioSettings, updateAudioSetting, AudioSettings } from '../utils';
+import { cn, formatTime, getAudioSettings, updateAudioSetting, AudioSettings } from '../utils';
+import ModeSwitchPrompt from './ModeSwitchPrompt';
 
 interface TimerDisplayProps {
   activeTask: Task | undefined;
-  onTimerComplete: (mode: TimerMode) => void;
-  onModeChange: (mode: TimerMode) => void;
-  startBreakTrigger?: number; // When this changes, start short break mode
-  startFocusTrigger?: number; // When this changes, start focus mode
-  onStartBreak?: () => void; // Callback to trigger break start
+  mode: TimerMode;
+  timeLeft: number;
+  isActive: boolean;
+  hasCompleted: boolean;
+  timerDurations: Record<TimerMode, number>;
+  onModeSwitch: (mode: TimerMode, autoStart?: boolean) => void;
+  onToggleTimer: () => void;
+  onResetTimer: () => void;
+  onSkipTimer: () => void;
+  onStartBreak?: () => void;
+  className?: string;
 }
 
-// Check if debug mode is enabled via URL parameter (?debug=true)
-const getDebugMode = (): boolean => {
-  if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('debug') === 'true';
-  }
-  return false;
+const MODES: Record<TimerMode, { label: string; color: string; icon: React.ElementType }> = {
+  focus: { label: 'Focus', color: 'text-pomo-red', icon: Brain },
+  shortBreak: { label: 'Short Break', color: 'text-pomo-green', icon: Coffee },
+  longBreak: { label: 'Long Break', color: 'text-pomo-blue', icon: Armchair },
 };
 
-const DEBUG_MODE = getDebugMode();
-
-const MODES: Record<TimerMode, { label: string; time: number; color: string; icon: React.ElementType }> = {
-  focus: { label: 'Focus', time: DEBUG_MODE ? 5 : 25 * 60, color: 'text-pomo-red', icon: Brain },
-  shortBreak: { label: 'Short Break', time: DEBUG_MODE ? 5 : 5 * 60, color: 'text-pomo-green', icon: Coffee },
-  longBreak: { label: 'Long Break', time: DEBUG_MODE ? 5 : 15 * 60, color: 'text-pomo-blue', icon: Armchair },
-};
-
-const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete, onModeChange, startBreakTrigger, startFocusTrigger, onStartBreak }) => {
-  const [mode, setMode] = useState<TimerMode>('focus');
-  const [timeLeft, setTimeLeft] = useState(MODES.focus.time);
-  const [isActive, setIsActive] = useState(false);
+const TimerDisplay: React.FC<TimerDisplayProps> = ({
+  activeTask,
+  mode,
+  timeLeft,
+  isActive,
+  hasCompleted,
+  timerDurations,
+  onModeSwitch,
+  onToggleTimer,
+  onResetTimer,
+  onSkipTimer,
+  onStartBreak,
+  className
+}) => {
   const [audioSettings, setAudioSettings] = useState<AudioSettings>(getAudioSettings());
-  const [hasCompleted, setHasCompleted] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
+  const [pendingModeSwitch, setPendingModeSwitch] = useState<TimerMode | null>(null);
+  const [pendingAutoStart, setPendingAutoStart] = useState(false);
   
   // Progress calculation for the circle
-  const totalTime = MODES[mode].time;
+  const totalTime = timerDurations[mode];
   const progress = ((totalTime - timeLeft) / totalTime) * 100;
   const radius = 120;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (progress / 100) * circumference;
 
-  const handleModeSwitch = (newMode: TimerMode, autoStart: boolean = false) => {
-    setMode(newMode);
-    setTimeLeft(MODES[newMode].time);
-    setIsActive(autoStart);
-    setHasCompleted(false); // Reset completion flag when switching modes
-    onModeChange(newMode);
-  };
+  const getFocusToBreakConfirmationMessage = (targetMode: TimerMode): string | null => {
+    if (targetMode !== 'shortBreak' && targetMode !== 'longBreak') return null;
 
-  // Handle external trigger to start break
-  useEffect(() => {
-    if (startBreakTrigger && startBreakTrigger > 0) {
-      setMode('shortBreak');
-      setTimeLeft(MODES.shortBreak.time);
-      setIsActive(true);
-      setHasCompleted(false); // Reset completion flag when starting break
-      onModeChange('shortBreak');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startBreakTrigger]);
+    const elapsedSeconds = Math.max(0, timerDurations.focus - timeLeft);
+    const targetLabel = targetMode === 'shortBreak' ? '短休息' : '长休息';
 
-  // Handle external trigger to start focus
-  useEffect(() => {
-    if (startFocusTrigger && startFocusTrigger > 0) {
-      setMode('focus');
-      setTimeLeft(MODES.focus.time);
-      setIsActive(true);
-      setHasCompleted(false); // Reset completion flag when starting focus
-      onModeChange('focus');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startFocusTrigger]);
+    if (!isActive && elapsedSeconds === 0) return null;
+    if (timeLeft === 0) return null;
 
-  const toggleTimer = () => {
-    setIsActive(!isActive);
-    // Stop tick sound when pausing
+    const elapsedLabel = formatTime(elapsedSeconds);
+
     if (isActive) {
-      stopTickSound();
+      if (elapsedSeconds < 60) {
+        return `确定结束本次专注并开始${targetLabel}吗？`;
+      }
+      if (elapsedSeconds < 5 * 60) {
+        return `你已专注 ${elapsedLabel}，现在开始${targetLabel}吗？`;
+      }
+      return `你已专注 ${elapsedLabel}，确定提前结束并开始${targetLabel}吗？`;
     }
-  };
-  
-  const resetTimer = () => {
-    setIsActive(false);
-    stopTickSound(); // Stop tick sound when resetting
-    setTimeLeft(MODES[mode].time);
-    setHasCompleted(false); // Reset completion flag when resetting
+
+    if (elapsedSeconds < 60) {
+      return `切换到${targetLabel}会重置本次专注，是否继续？`;
+    }
+    return `本次专注已进行 ${elapsedLabel}，切换到${targetLabel}将重置专注，是否继续？`;
   };
 
-  const handleComplete = useCallback(() => {
-    // Only complete if timer actually reached 0 while active and hasn't been completed yet
-    if (timeLeft === 0 && isActive && !hasCompleted) {
-      setHasCompleted(true);
-      setIsActive(false);
-      playAlarmSound(); // Play alarm sound when timer completes
-      onTimerComplete(mode);
-      // Auto reset for next round, but don't start
-      setTimeLeft(0); 
+  const getBreakToOtherConfirmationMessage = (currentMode: TimerMode, targetMode: TimerMode): string | null => {
+    if (currentMode !== 'shortBreak' && currentMode !== 'longBreak') return null;
+    if (targetMode === currentMode) return null;
+
+    const currentLabel = currentMode === 'shortBreak' ? '短休息' : '长休息';
+    const targetLabel =
+      targetMode === 'focus'
+        ? '专注'
+        : targetMode === 'shortBreak'
+          ? '短休息'
+          : '长休息';
+    const elapsedSeconds = Math.max(0, timerDurations[currentMode] - timeLeft);
+
+    if (!isActive && elapsedSeconds === 0) return null;
+    if (timeLeft === 0) return null;
+
+    const elapsedLabel = formatTime(elapsedSeconds);
+
+    if (isActive) {
+      if (elapsedSeconds < 60) {
+        return `确定结束本次${currentLabel}并切换到${targetLabel}吗？`;
+      }
+      if (elapsedSeconds < 5 * 60) {
+        return `你已休息 ${elapsedLabel}，现在切换到${targetLabel}吗？`;
+      }
+      return `你已休息 ${elapsedLabel}，确定提前结束并切换到${targetLabel}吗？`;
     }
-  }, [mode, onTimerComplete, timeLeft, isActive, hasCompleted]);
+
+    if (elapsedSeconds < 60) {
+      return `切换到${targetLabel}会重置本次${currentLabel}，是否继续？`;
+    }
+    return `本次${currentLabel}已进行 ${elapsedLabel}，切换到${targetLabel}将重置休息，是否继续？`;
+  };
+
+  const handleModeSwitch = (newMode: TimerMode, autoStart: boolean = false) => {
+    if (mode === 'focus' && (newMode === 'shortBreak' || newMode === 'longBreak')) {
+      const message = getFocusToBreakConfirmationMessage(newMode);
+      if (message) {
+        setPendingModeSwitch(newMode);
+        setPendingAutoStart(autoStart);
+        return;
+      }
+    }
+
+    if ((mode === 'shortBreak' || mode === 'longBreak') && newMode !== mode) {
+      const message = getBreakToOtherConfirmationMessage(mode, newMode);
+      if (message) {
+        setPendingModeSwitch(newMode);
+        setPendingAutoStart(autoStart);
+        return;
+      }
+    }
+
+    onModeSwitch(newMode, autoStart);
+  };
 
   const handleTakeBreak = () => {
     // Show celebration animation
@@ -116,42 +147,6 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
       }
     }, 1500); // Celebration animation duration
   };
-
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-
-    if (isActive && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft((prev) => {
-          const newTime = prev - 1;
-          // Play tick sound on each second only in focus mode
-          if (mode === 'focus' && newTime > 0) {
-            playTickSound();
-          } else if (mode !== 'focus' && newTime === 0) {
-            // Stop tick sound when timer reaches 0 in break mode
-            stopTickSound();
-          }
-          return newTime;
-        });
-      }, 1000);
-      // Play initial tick when timer starts, only in focus mode
-      if (mode === 'focus') {
-        playTickSound();
-      }
-    } else if (timeLeft === 0 && isActive && !hasCompleted) {
-      stopTickSound(); // Ensure tick sound is stopped before alarm
-      handleComplete();
-    } else if (!isActive) {
-      // Stop tick sound when timer is paused
-      stopTickSound();
-    }
-
-    return () => {
-      clearInterval(interval);
-      // Stop tick sound when component unmounts or effect cleans up
-      stopTickSound();
-    };
-  }, [isActive, timeLeft, handleComplete, mode]);
 
   // Load settings on mount
   useEffect(() => {
@@ -170,7 +165,41 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
   const themeBorderColor = mode === 'focus' ? 'border-pomo-red' : mode === 'shortBreak' ? 'border-pomo-green' : 'border-pomo-blue';
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-6 flex flex-col items-center justify-center relative overflow-hidden transition-colors duration-500">
+    <div className={cn(
+      "card p-6 md:p-8 flex flex-col items-center justify-center relative overflow-hidden transition-colors duration-500",
+      className
+    )}>
+      {pendingModeSwitch && (
+        <ModeSwitchPrompt
+          title={mode === 'focus' ? '切换休息模式' : '切换计时模式'}
+          message={
+            getFocusToBreakConfirmationMessage(pendingModeSwitch) ??
+            getBreakToOtherConfirmationMessage(mode, pendingModeSwitch) ??
+            ''
+          }
+          confirmLabel={
+            pendingModeSwitch === 'focus'
+              ? '开始专注'
+              : `开始${pendingModeSwitch === 'shortBreak' ? '短休息' : '长休息'}`
+          }
+          cancelLabel={
+            mode === 'focus'
+              ? '继续专注'
+              : `继续${mode === 'shortBreak' ? '短休息' : '长休息'}`
+          }
+          onConfirm={() => {
+            const nextMode = pendingModeSwitch;
+            const nextAutoStart = pendingAutoStart;
+            setPendingModeSwitch(null);
+            setPendingAutoStart(false);
+            onModeSwitch(nextMode, nextAutoStart);
+          }}
+          onCancel={() => {
+            setPendingModeSwitch(null);
+            setPendingAutoStart(false);
+          }}
+        />
+      )}
       {/* Tick Sound Toggle - Bottom Left */}
       <div className="absolute bottom-4 left-4 z-20">
         <button
@@ -178,8 +207,8 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
           className={cn(
             "p-2 rounded-lg transition-all",
             audioSettings.tickSoundEnabled 
-              ? "text-gray-600 hover:text-gray-800 hover:bg-gray-100" 
-              : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+              ? "text-slate-600 hover:text-slate-900 hover:bg-slate-100" 
+              : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
           )}
           title={audioSettings.tickSoundEnabled ? "Disable tick sound" : "Enable tick sound"}
         >
@@ -192,7 +221,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
       </div>
 
       {/* Mode Tabs */}
-      <div className="flex space-x-2 mb-8 z-10 bg-gray-100 p-1 rounded-full">
+      <div className="flex space-x-2 mb-8 z-10 glass p-1 rounded-full">
         {(Object.keys(MODES) as TimerMode[]).map((m) => (
           <button
             key={m}
@@ -201,7 +230,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
               "px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 flex items-center gap-2",
               mode === m 
                 ? `${themeColor} text-white shadow-md` 
-                : "text-gray-500 hover:text-gray-700 hover:bg-gray-200"
+                : "text-slate-500 hover:text-slate-700 hover:bg-white/70"
             )}
           >
             {React.createElement(MODES[m].icon, { size: 16 })}
@@ -220,7 +249,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
             stroke="currentColor"
             strokeWidth="12"
             fill="transparent"
-            className="text-gray-100"
+            className="text-slate-100"
           />
           <circle
             cx="144"
@@ -236,10 +265,10 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
           />
         </svg>
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
-          <div className={cn("text-6xl font-bold tabular-nums tracking-tighter", themeTextColor)}>
+          <div className={cn("text-6xl font-semibold tabular-nums tracking-tighter", themeTextColor)}>
             {formatTime(timeLeft)}
           </div>
-          <div className="text-gray-400 font-medium mt-2 uppercase tracking-widest text-xs">
+          <div className="text-slate-400 font-medium mt-2 uppercase tracking-[0.35em] text-xs">
             {isActive ? 'Running' : 'Paused'}
           </div>
         </div>
@@ -249,15 +278,15 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
       <div className="mb-8 w-full max-w-md text-center h-12">
         {mode === 'focus' ? (
            activeTask ? (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-2 flex items-center justify-center gap-2 animate-fadeIn">
-              <span className="text-xs font-bold uppercase text-gray-400">Working on:</span>
-              <span className="font-medium text-gray-800 truncate max-w-[200px]">{activeTask.title}</span>
+            <div className="card-muted px-3 py-2 flex items-center justify-center gap-2 animate-fadeIn">
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Working on</span>
+              <span className="font-medium text-slate-800 truncate max-w-[200px]">{activeTask.title}</span>
             </div>
           ) : (
-            <div className="text-gray-400 text-sm italic py-2">Select a task below to track progress</div>
+            <div className="text-slate-400 text-sm italic py-2">Select a task below to track progress</div>
           )
         ) : (
-          <div className="text-gray-500 font-medium py-2">Take a breath, relax.</div>
+          <div className="text-slate-500 font-medium py-2">Take a breath, relax.</div>
         )}
       </div>
 
@@ -305,7 +334,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
           </button>
         ) : (
           <button
-            onClick={toggleTimer}
+            onClick={onToggleTimer}
             className={cn(
               "w-20 h-20 rounded-2xl flex items-center justify-center text-white shadow-lg transform transition-all hover:scale-105 active:scale-95",
               themeColor
@@ -316,8 +345,8 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
         )}
         
         <button
-          onClick={resetTimer}
-          className="w-14 h-14 rounded-xl bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition-colors"
+          onClick={onResetTimer}
+          className="w-14 h-14 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-colors"
           title="Reset Timer"
         >
           <RotateCcw size={24} />
@@ -325,8 +354,8 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({ activeTask, onTimerComplete
 
         {isActive && timeLeft > 0 && (
            <button
-           onClick={handleComplete}
-           className="w-14 h-14 rounded-xl bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition-colors"
+           onClick={onSkipTimer}
+           className="w-14 h-14 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-colors"
            title="Skip / Finish"
          >
            <SkipForward size={24} />

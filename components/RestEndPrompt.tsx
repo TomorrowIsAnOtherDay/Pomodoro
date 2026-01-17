@@ -50,13 +50,13 @@ const RestEndPrompt: React.FC<RestEndPromptProps> = ({ onStartFocus, onDismiss }
 
   return (
     <div className={`fixed top-0 left-0 right-0 z-50 ${isClosing ? 'animate-slide-up' : 'animate-slide-down'}`}>
-      <div className="bg-green-50 border-b border-green-200 shadow-md backdrop-blur-sm bg-opacity-95">
+      <div className="bg-kiwi-cyan/20 border-b border-kiwi-cyan/40 shadow-md backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <span className="text-2xl flex-shrink-0">🌿</span>
               <div className="flex-1 min-w-0">
-                <p className="text-gray-800 font-medium">
+                <p className="text-slate-800 font-medium">
                   休息结束，可以开始新的专注啦！
                 </p>
               </div>
@@ -64,19 +64,19 @@ const RestEndPrompt: React.FC<RestEndPromptProps> = ({ onStartFocus, onDismiss }
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
                 onClick={handleStartFocus}
-                className="px-4 py-2 bg-pomo-green text-white rounded-lg font-medium hover:bg-green-600 transition-all duration-200 shadow-sm whitespace-nowrap hover:shadow-md hover:scale-105 active:scale-95"
+                className="px-4 py-2 bg-pomo-green text-white rounded-lg font-medium hover:brightness-95 transition-all duration-200 shadow-sm whitespace-nowrap hover:shadow-md hover:scale-105 active:scale-95"
               >
                 开始 25 分钟专注
               </button>
               <button
                 onClick={handleDismiss}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95"
+                className="px-4 py-2 bg-white/70 text-slate-700 rounded-lg font-medium hover:bg-white transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95"
               >
                 忽略
               </button>
               <button
                 onClick={handleDismiss}
-                className="p-2 text-gray-400 hover:text-gray-600 transition-all duration-200 flex-shrink-0 rounded-lg hover:bg-gray-100 active:scale-95"
+                className="p-2 text-slate-400 hover:text-slate-600 transition-all duration-200 flex-shrink-0 rounded-lg hover:bg-white/70 active:scale-95"
                 title="关闭"
               >
                 <X size={18} />
@@ -90,4 +90,3 @@ const RestEndPrompt: React.FC<RestEndPromptProps> = ({ onStartFocus, onDismiss }
 };
 
 export default RestEndPrompt;
-

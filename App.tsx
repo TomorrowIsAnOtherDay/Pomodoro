@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Task, DailyStats } from './types';
-import { getTodayString } from './utils';
+import React, { useState, useEffect, useCallback } from 'react';
+import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { Task, DailyStats, TimerMode } from './types';
+import { getTodayString, getTimerDurations, playAlarmSound, playTickSound, stopTickSound } from './utils';
 import Home from './pages/Home';
 import TodoList from './pages/TodoList';
+import RestEndPrompt from './components/RestEndPrompt';
 
 function App() {
   // --- State ---
@@ -106,7 +107,7 @@ function App() {
   }, [tasks]);
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AppContent
         tasks={tasks}
         activeTaskId={activeTaskId}
@@ -115,7 +116,7 @@ function App() {
         onSetActiveTaskId={setActiveTaskId}
         onUpdateStats={setDailyStats}
       />
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 
@@ -137,34 +138,146 @@ function AppContent({
   onUpdateStats,
 }: AppContentProps) {
   const location = useLocation();
+  const timerDurations = getTimerDurations();
+  const [timerMode, setTimerMode] = useState<TimerMode>('focus');
+  const [timeLeft, setTimeLeft] = useState(timerDurations.focus);
+  const [isActive, setIsActive] = useState(false);
+  const [hasCompleted, setHasCompleted] = useState(false);
+  const [showRestEndPrompt, setShowRestEndPrompt] = useState(false);
+
+  const handleModeSwitch = (newMode: TimerMode, autoStart: boolean = false) => {
+    setTimerMode(newMode);
+    setTimeLeft(timerDurations[newMode]);
+    setIsActive(autoStart);
+    setHasCompleted(false);
+  };
+
+  const handleToggleTimer = () => {
+    setIsActive(prev => {
+      if (prev) {
+        stopTickSound();
+      }
+      return !prev;
+    });
+  };
+
+  const handleResetTimer = () => {
+    setIsActive(false);
+    stopTickSound();
+    setTimeLeft(timerDurations[timerMode]);
+    setHasCompleted(false);
+  };
+
+  const handleTimerComplete = useCallback((mode: TimerMode) => {
+    if (mode === 'focus') {
+      if (activeTaskId) {
+        const updatedTasks = tasks.map(t => {
+          if (t.id === activeTaskId) {
+            return { ...t, actPomodoros: t.actPomodoros + 1 };
+          }
+          return t;
+        });
+        onUpdateTasks(updatedTasks);
+      }
+
+      onUpdateStats({
+        ...dailyStats,
+        totalPomodoros: dailyStats.totalPomodoros + 1,
+        totalFocusMinutes: dailyStats.totalFocusMinutes + 25
+      });
+    } else {
+      setShowRestEndPrompt(true);
+    }
+  }, [activeTaskId, dailyStats, onUpdateStats, onUpdateTasks, tasks]);
+
+  const handleStartBreak = () => {
+    setShowRestEndPrompt(false);
+    handleModeSwitch('shortBreak', true);
+  };
+
+  const handleStartFocus = () => {
+    setShowRestEndPrompt(false);
+    handleModeSwitch('focus', true);
+  };
+
+  const handleDismissRestEndPrompt = () => {
+    setShowRestEndPrompt(false);
+  };
+
+  const handleSkipTimer = () => {
+    setTimeLeft(0);
+    setIsActive(true);
+    setHasCompleted(false);
+  };
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    if (isActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(prev => {
+          const newTime = prev - 1;
+          if (timerMode === 'focus' && newTime > 0) {
+            playTickSound();
+          } else if (timerMode !== 'focus' && newTime === 0) {
+            stopTickSound();
+          }
+          return newTime;
+        });
+      }, 1000);
+
+      if (timerMode === 'focus') {
+        playTickSound();
+      }
+    } else if (timeLeft === 0 && isActive && !hasCompleted) {
+      stopTickSound();
+      setHasCompleted(true);
+      setIsActive(false);
+      playAlarmSound();
+      handleTimerComplete(timerMode);
+    } else if (!isActive) {
+      stopTickSound();
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+      stopTickSound();
+    };
+  }, [handleTimerComplete, hasCompleted, isActive, timeLeft, timerMode]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
+      {showRestEndPrompt && (
+        <RestEndPrompt
+          onStartFocus={handleStartFocus}
+          onDismiss={handleDismissRestEndPrompt}
+        />
+      )}
       {/* Navigation */}
-      <nav className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-4">
+      <nav className="sticky top-0 z-40 bg-white/70 border-b border-slate-200/80 backdrop-blur-lg">
+        <div className="max-w-6xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <Link to="/" className="flex items-center gap-2 text-xl font-bold text-gray-800 hover:text-pomo-red transition-colors">
+            <Link to="/" className="flex items-center gap-3 text-xl font-semibold text-slate-800 hover:text-pomo-red transition-colors">
               <span className="text-pomo-red text-2xl">🍅</span>
-              Pomodoro Todo
+              Pomodoro Desk
             </Link>
-            <div className="flex gap-4">
+            <div className="flex gap-3">
               <Link
                 to="/"
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                className={`px-4 py-2 rounded-full font-medium transition-colors ${
                   location.pathname === '/'
-                    ? 'bg-pomo-red text-white'
-                    : 'text-gray-600 hover:text-pomo-red hover:bg-red-50'
+                    ? 'bg-pomo-red text-white shadow-soft'
+                    : 'text-slate-600 hover:text-pomo-red hover:bg-kiwi-pink/10'
                 }`}
               >
                 Timer
               </Link>
               <Link
                 to="/todos"
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                className={`px-4 py-2 rounded-full font-medium transition-colors ${
                   location.pathname === '/todos'
-                    ? 'bg-pomo-red text-white'
-                    : 'text-gray-600 hover:text-pomo-red hover:bg-red-50'
+                    ? 'bg-pomo-red text-white shadow-soft'
+                    : 'text-slate-600 hover:text-pomo-red hover:bg-kiwi-pink/10'
                 }`}
               >
                 Todo List
@@ -185,7 +298,16 @@ function AppContent({
               dailyStats={dailyStats}
               onUpdateTasks={onUpdateTasks}
               onSetActiveTaskId={onSetActiveTaskId}
-              onUpdateStats={onUpdateStats}
+              timerMode={timerMode}
+              timeLeft={timeLeft}
+              isActive={isActive}
+              hasCompleted={hasCompleted}
+              timerDurations={timerDurations}
+              onModeSwitch={handleModeSwitch}
+              onToggleTimer={handleToggleTimer}
+              onResetTimer={handleResetTimer}
+              onSkipTimer={handleSkipTimer}
+              onStartBreak={handleStartBreak}
             />
           }
         />

@@ -1,9 +1,28 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { TimerMode } from './types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+// Check if debug mode is enabled via URL parameter (?debug=true)
+export const getDebugMode = (): boolean => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('debug') === 'true';
+  }
+  return false;
+};
+
+export const getTimerDurations = (): Record<TimerMode, number> => {
+  const debugMode = getDebugMode();
+  return {
+    focus: debugMode ? 5 : 25 * 60,
+    shortBreak: debugMode ? 5 : 5 * 60,
+    longBreak: debugMode ? 5 : 15 * 60
+  };
+};
 
 // Audio file path for tick sound (can be customized)
 // Place your audio file in public/sounds/ directory

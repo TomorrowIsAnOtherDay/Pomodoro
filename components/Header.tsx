@@ -10,15 +10,21 @@ const Header: React.FC = () => {
   });
 
   return (
-    <header className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between border-b border-gray-200 pb-4">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <span className="text-pomo-red text-3xl">🍅</span> Pomodoro Timer
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">Focus, track, and get things done.</p>
-      </div>
-      <div className="mt-2 md:mt-0 text-gray-600 font-medium bg-white px-3 py-1 rounded-md shadow-sm border border-gray-100">
-        {dateStr}
+    <header className="mb-8">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 rounded-2xl bg-kiwi-pink/15 text-kiwi-pink flex items-center justify-center text-2xl shadow-soft">
+            🍅
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Pomodoro Desk</p>
+            <h1 className="text-3xl font-semibold text-slate-900 font-display">Focus dashboard</h1>
+            <p className="text-sm text-slate-500 mt-1">Stay steady, keep the rhythm, finish with clarity.</p>
+          </div>
+        </div>
+        <div className="card px-4 py-2 text-sm text-slate-600 font-medium">
+          {dateStr}
+        </div>
       </div>
     </header>
   );

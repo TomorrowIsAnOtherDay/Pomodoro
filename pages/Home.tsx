@@ -3,10 +3,8 @@ import Header from '../components/Header';
 import TimerDisplay from '../components/TimerDisplay';
 import TaskSection from '../components/TaskSection';
 import StatsSection from '../components/StatsSection';
-import BreakPrompt from '../components/BreakPrompt';
-import RestEndPrompt from '../components/RestEndPrompt';
+import ModeSwitchPrompt from '../components/ModeSwitchPrompt';
 import { Task, DailyStats, TimerMode } from '../types';
-import { getTodayString } from '../utils';
 
 interface HomeProps {
   tasks: Task[];
@@ -14,7 +12,16 @@ interface HomeProps {
   dailyStats: DailyStats;
   onUpdateTasks: (tasks: Task[]) => void;
   onSetActiveTaskId: (id: string | null) => void;
-  onUpdateStats: (stats: DailyStats) => void;
+  timerMode: TimerMode;
+  timeLeft: number;
+  isActive: boolean;
+  hasCompleted: boolean;
+  timerDurations: Record<TimerMode, number>;
+  onModeSwitch: (mode: TimerMode, autoStart?: boolean) => void;
+  onToggleTimer: () => void;
+  onResetTimer: () => void;
+  onSkipTimer: () => void;
+  onStartBreak: () => void;
 }
 
 const Home: React.FC<HomeProps> = ({
@@ -23,13 +30,19 @@ const Home: React.FC<HomeProps> = ({
   dailyStats,
   onUpdateTasks,
   onSetActiveTaskId,
-  onUpdateStats,
+  timerMode,
+  timeLeft,
+  isActive,
+  hasCompleted,
+  timerDurations,
+  onModeSwitch,
+  onToggleTimer,
+  onResetTimer,
+  onSkipTimer,
+  onStartBreak
 }) => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [showBreakPrompt, setShowBreakPrompt] = useState(false);
-  const [showRestEndPrompt, setShowRestEndPrompt] = useState(false);
-  const [startBreakTrigger, setStartBreakTrigger] = useState(0);
-  const [startFocusTrigger, setStartFocusTrigger] = useState(0);
+  const [pendingDeleteTask, setPendingDeleteTask] = useState<Task | null>(null);
 
   const handleAddTask = (task: Task) => {
     onUpdateTasks([task, ...tasks]);
@@ -43,64 +56,8 @@ const Home: React.FC<HomeProps> = ({
     onUpdateTasks(tasks.map(t => t.id === updatedTask.id ? updatedTask : t));
   };
 
-  const handleDeleteTask = (id: string) => {
-    if (confirm('Are you sure you want to delete this task?')) {
-      const updatedTasks = tasks.map(t => 
-        t.id === id ? { ...t, deletedAt: Date.now() } : t
-      );
-      onUpdateTasks(updatedTasks);
-      if (activeTaskId === id) onSetActiveTaskId(null);
-    }
-  };
-
-  const handleTimerComplete = (mode: TimerMode) => {
-    if (mode === 'focus') {
-      // 1. Update active task
-      if (activeTaskId) {
-        const updatedTasks = tasks.map(t => {
-          if (t.id === activeTaskId) {
-            return { ...t, actPomodoros: t.actPomodoros + 1 };
-          }
-          return t;
-        });
-        onUpdateTasks(updatedTasks);
-      }
-
-      // 2. Update Stats
-      onUpdateStats({
-        ...dailyStats,
-        totalPomodoros: dailyStats.totalPomodoros + 1,
-        totalFocusMinutes: dailyStats.totalFocusMinutes + 25
-      });
-
-      // 3. Break prompt is now handled directly in TimerDisplay component
-      setShowBreakPrompt(false);
-      setShowRestEndPrompt(false);
-    } else {
-      // Rest ended - show rest end prompt
-      setShowRestEndPrompt(true);
-      setShowBreakPrompt(false);
-    }
-  };
-
-  const handleStartBreak = () => {
-    setShowBreakPrompt(false);
-    // Trigger break mode start by updating the trigger value
-    setStartBreakTrigger(prev => prev + 1);
-  };
-
-  const handleDismissBreakPrompt = () => {
-    setShowBreakPrompt(false);
-  };
-
-  const handleStartFocus = () => {
-    setShowRestEndPrompt(false);
-    // Trigger focus mode start by updating the trigger value
-    setStartFocusTrigger(prev => prev + 1);
-  };
-
-  const handleDismissRestEndPrompt = () => {
-    setShowRestEndPrompt(false);
+  const handleDeleteTask = (task: Task) => {
+    setPendingDeleteTask(task);
   };
 
   // Close toast automatically
@@ -115,23 +72,25 @@ const Home: React.FC<HomeProps> = ({
 
   return (
     <>
-      {/* Break Prompt */}
-      {showBreakPrompt && (
-        <BreakPrompt
-          onStartBreak={handleStartBreak}
-          onDismiss={handleDismissBreakPrompt}
+      {pendingDeleteTask && (
+        <ModeSwitchPrompt
+          title="删除任务"
+          message={`确定删除 "${pendingDeleteTask.title}" 吗？任务会被移动到回收站。`}
+          confirmLabel="删除"
+          cancelLabel="取消"
+          confirmClassName="bg-kiwi-pink"
+          onCancel={() => setPendingDeleteTask(null)}
+          onConfirm={() => {
+            const updatedTasks = tasks.map(t =>
+              t.id === pendingDeleteTask.id ? { ...t, deletedAt: Date.now() } : t
+            );
+            onUpdateTasks(updatedTasks);
+            if (activeTaskId === pendingDeleteTask.id) onSetActiveTaskId(null);
+            setPendingDeleteTask(null);
+          }}
         />
       )}
-
-      {/* Rest End Prompt */}
-      {showRestEndPrompt && (
-        <RestEndPrompt
-          onStartFocus={handleStartFocus}
-          onDismiss={handleDismissRestEndPrompt}
-        />
-      )}
-
-      <div className={`max-w-6xl mx-auto px-4 py-8 ${(showBreakPrompt || showRestEndPrompt) ? 'pt-24' : ''}`}>
+      <div className="max-w-6xl mx-auto px-6 py-10">
         <Header />
         
         <StatsSection stats={dailyStats} />
@@ -141,17 +100,18 @@ const Home: React.FC<HomeProps> = ({
           <div className="lg:col-span-5 flex flex-col gap-6">
             <TimerDisplay 
               activeTask={activeTask}
-              onTimerComplete={handleTimerComplete}
-              onModeChange={() => {}} // Could be used to log interruptions
-              startBreakTrigger={startBreakTrigger}
-              startFocusTrigger={startFocusTrigger}
-              onStartBreak={handleStartBreak}
+              mode={timerMode}
+              timeLeft={timeLeft}
+              isActive={isActive}
+              hasCompleted={hasCompleted}
+              timerDurations={timerDurations}
+              onModeSwitch={onModeSwitch}
+              onToggleTimer={onToggleTimer}
+              onResetTimer={onResetTimer}
+              onSkipTimer={onSkipTimer}
+              onStartBreak={onStartBreak}
+              className="h-[600px]"
             />
-            
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
-              <h4 className="font-bold mb-1">💡 Pro Tip</h4>
-              <p>Select a task from the list on the right before starting your timer to track your actual effort versus estimated effort.</p>
-            </div>
           </div>
 
           {/* Right Column: Tasks */}
@@ -167,13 +127,18 @@ const Home: React.FC<HomeProps> = ({
           </div>
         </div>
 
+        <div className="card-muted p-4 text-sm text-slate-700 mt-6 text-center">
+          <h4 className="font-semibold mb-1">💡 Workflow tip</h4>
+          <p>Select a task before you start. This keeps your estimate and actual focus aligned.</p>
+        </div>
+
         {/* Toast Notification */}
         {toastMessage && (
-          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-bounce-in z-50">
+          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-bounce-in z-50">
             <span>{toastMessage}</span>
             <button 
               onClick={() => setToastMessage(null)}
-              className="text-gray-400 hover:text-white"
+              className="text-slate-400 hover:text-white"
             >
               ✕
             </button>
@@ -185,4 +150,3 @@ const Home: React.FC<HomeProps> = ({
 };
 
 export default Home;
-

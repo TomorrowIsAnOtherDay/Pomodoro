@@ -1,20 +1,24 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Pomodoro Desk (Tauri + React)
 
-# Run and deploy your AI Studio app
+Offline-first Pomodoro timer with task tracking and daily stats. Designed as a macOS desktop app powered by Tauri.
 
-This contains everything you need to run your app locally.
+## Development
 
-View your app in AI Studio: https://ai.studio/apps/drive/1-4NTcMoUT-_-muHVtpHC4gw4nhiuRn4O
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js, Rust toolchain, and Xcode Command Line Tools.
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Run the web UI (Vite):
    `npm run dev`
+3. Run the desktop app (Tauri):
+   `npm run tauri dev`
+
+## Build
+
+- Web build: `npm run build`
+- Desktop build: `npm run tauri build`
+
+## Notes
+
+- No external services are required; data is stored locally in `localStorage`.
+- This repo uses local Tailwind build output (no CDN).
